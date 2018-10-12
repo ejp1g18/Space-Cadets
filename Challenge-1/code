@@ -1,0 +1,26 @@
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.util.Scanner;
+
+public class Challenge1 {
+    
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
+        String username = scanner.nextLine();
+        String urlString = "https://www.ecs.soton.ac.uk/people/" + username;
+        try{
+            URL url = new URL(urlString);
+            BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream()));
+            String currentLine, full = "";
+            while((currentLine = reader.readLine()) != null){
+                full += currentLine;
+            }
+            String name = full.split("property=\"name\">")[1].split("<")[0];
+            System.out.println(name);
+            reader.close();
+        } catch (Exception ex){
+            System.out.println(ex.getMessage());
+        }
+    }
+}
