@@ -36,9 +36,9 @@ public class Interpreter {
             String[] lineParts = line.split(" ");
             if (lineParts[0].equals("clear")) {
                 clear(getVariable(lineParts[1].split(";")[0]));
-            } else if (lineParts[0].equals("inc")) {
+            } else if (lineParts[0].equals("incr")) {
                 inc(getVariable(lineParts[1].split(";")[0]));
-            } else if (lineParts[0].equals("dec")) {
+            } else if (lineParts[0].equals("decr")) {
                 dec(getVariable(lineParts[1].split(";")[0]));
             } else if (line.equals("end;")) {
                 Loop loop = loopStack.get(loopStack.size() - 1);
