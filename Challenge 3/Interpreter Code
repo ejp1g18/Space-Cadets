@@ -1,0 +1,421 @@
+package interpreter.interpreter;
+
+import java.awt.Color;
+import java.awt.Graphics;
+import java.util.ArrayList;
+
+public class Interpreter {
+
+    private ArrayList<Variable> variables;
+    private ArrayList<Conditional> conditionStack;
+    private ArrayList<String> code, output;
+    public int lineNo = 0;
+    private boolean error = false;
+
+    public Interpreter(ArrayList<String> code) {
+        this.code = code;
+        variables = new ArrayList<>();
+        conditionStack = new ArrayList<>();
+        output = new ArrayList<>();
+    }
+
+    public void render(Graphics g, int x, int y, int width, int height) {
+        g.setColor(Color.black);
+        g.fillRect(x, y, width, height);
+        g.setColor(Color.white);
+        for (int i = 0; i < Math.min(output.size(), height / (g.getFontMetrics().getHeight() + 2)); i++) {
+            String text = output.get(output.size() - i - 1);
+            int ty = y + height - g.getFontMetrics().getHeight() * (1 + i);
+            g.drawString(text, x + 5, ty);
+        }
+        g.drawRect(x, y, width, height);
+    }
+
+    public boolean nextLine() {
+        String line = code.get(lineNo);
+        line = line.trim();
+        if (line.equals("")) {
+            lineNo++;
+            return code.size() == lineNo;
+        }
+        try {
+            if (line.startsWith("}")) {
+                line = line.replace("}", "");
+                line = line.trim();
+                if (line.startsWith("else")) {
+                    if (conditionStack.get(conditionStack.size() - 1) instanceof Loop) {
+                        throw new Exception();
+                    } else {
+                        line = line.replace("else", "");
+                        line = line.trim();
+                        if (line.startsWith("if") && !conditionStack.get(conditionStack.size() - 1).running) {
+                            line = line.replace("if ", "");
+                            line = line.replace(" {", "");
+                            conditionStack.remove(conditionStack.size() - 1);
+                            Conditional c = new Conditional(line);
+                            conditionStack.add(c);
+                        } else {
+                            conditionStack.get(conditionStack.size() - 1).running = !conditionStack.get(conditionStack.size() - 1).running;
+                        }
+                    }
+                } else {
+                    if (conditionStack.get(conditionStack.size() - 1) instanceof Loop) {
+                        Loop l = (Loop) conditionStack.get(conditionStack.size() - 1);
+                        if (l.evaluate()) {
+                            lineNo = l.lineNo;
+                        } else {
+                            conditionStack.remove(conditionStack.size() - 1);
+                        }
+                    } else {
+                        conditionStack.remove(conditionStack.size() - 1);
+                    }
+                }
+            } else {
+                boolean run = true;
+                if (conditionStack.size() > 0) {
+                    run = conditionStack.get(conditionStack.size() - 1).running;
+                }
+                if (run) {
+                    if (line.startsWith("var ")) { //create variable
+                        line = line.replace("var ", "");
+                        String varName = line.split(" ")[0];
+                        if (line.split("").length == 1) {
+                            createVariable(varName);
+                        } else {
+                            if ("=".equals(line.split(" ")[1])) {
+                                //value
+                                String val = line.split(" ")[2];
+                                if (val.equals("true")) { //boolean
+                                    createVariable(varName, true);
+                                } else if (val.equals("false")) { //boolean
+                                    createVariable(varName, false);
+                                } else { //integer
+                                    val = line.substring(varName.length() + 3);
+                                    int intVal = expressionSolver(val).getIntegerValue();
+                                    createVariable(varName, intVal);
+                                }
+                            }
+                        }
+                    } else if (line.startsWith("if ")) {
+                        line = line.replace("if ", "");
+                        line = line.replace(" {", "");
+                        Conditional c = new Conditional(line);
+                        conditionStack.add(c);
+                    } else if (line.startsWith("while ")) {
+                        line = line.replace("while ", "");
+                        line = line.replace(" {", "");
+                        Loop l = new Loop(line, lineNo);
+                        conditionStack.add(l);
+                    } else {
+                        String varName = line.split(" ")[0];
+                        Variable v = getVariable(varName);
+                        if (v != null) {
+                            v.value = expressionSolver(line.substring(3)).value;
+                        }
+                        output.add(v.name + " = " + v.text());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            output.add("Error line: " + lineNo);
+            error = true;
+        }
+        lineNo++;
+        return code.size() == lineNo;
+    }
+
+    public Variable conditionSolver(String line) {
+        //removes spaces and brackets around line
+        line = line.trim();
+        if (line.startsWith("(") && line.endsWith(")")) {
+            line = line.substring(1, line.length() - 1);
+        }
+        int brackets = 0; //track depth
+        int type = -1; //condition type
+        ArrayList<Integer> splitPoints = new ArrayList<>();
+        splitPoints.add(0);
+        for (int i = line.length() - 1; i >= 0 && splitPoints.size() < 2; i--) {
+            if (line.charAt(i) == '(') {
+                brackets++;
+            } else if (line.charAt(i) == ')') {
+                brackets--;
+            } else if (brackets == 0 && (line.charAt(i) == '&' || line.charAt(i) == '|' || line.charAt(i) == '=' || line.charAt(i) == '<' || line.charAt(i) == '>')) {
+                splitPoints.add(i);
+                switch (line.charAt(i)) {
+                    case '&':
+                        type = 0;
+                        break;
+                    case '|':
+                        type = 1;
+                        break;
+                    case '=':
+                        type = 2;
+                        if (line.charAt(i - 1) == '!') {
+                            type = 3;
+                        }
+                        break;
+                    case '<':
+                        type = 4;
+                        break;
+                    case '>':
+                        type = 5;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+        if (type > -1) { //is a condition
+            splitPoints.add(line.length());
+            Variable[] solvedSections = new Variable[2];
+            //solves each parts
+            solvedSections[0] = conditionSolver(line.substring(splitPoints.get(0), splitPoints.get(1) - 1));
+            solvedSections[1] = conditionSolver(line.substring(splitPoints.get(1) + 1, splitPoints.get(2)));
+            switch (type) { //solves
+                case 0:
+                    return new Bool("temp", solvedSections[0].getBooleanValue() && solvedSections[1].getBooleanValue());
+                case 1:
+                    return new Bool("temp", solvedSections[0].getBooleanValue() || solvedSections[1].getBooleanValue());
+                case 2:
+                    return new Bool("temp", solvedSections[0].value == solvedSections[1].value);
+                case 3:
+                    return new Bool("temp", solvedSections[0].value != solvedSections[1].value);
+                case 4:
+                    return new Bool("temp", solvedSections[0].getIntegerValue() < solvedSections[1].getIntegerValue());
+                case 5:
+                    return new Bool("temp", solvedSections[0].getIntegerValue() > solvedSections[1].getIntegerValue());
+                default:
+                    break;
+            }
+        } else {//is an expression
+            return expressionSolver(line);
+        }
+        return null;
+    }
+
+    public Variable expressionSolver(String line) {
+        //removes spaces and brackets around line
+        line = line.trim();
+        int brackets = 0; //track depth
+        if (line.startsWith("(")) {
+            brackets = 1;
+            for (int i = 1; i < line.length() - 1 && brackets > 0; i++) {
+                if (line.charAt(i) == '(') {
+                    brackets++;
+                } else if (line.charAt(i) == ')') {
+                    brackets--;
+                }
+            }
+            if (brackets > 0 && line.endsWith(")")) {
+                line = line.substring(1, line.length() - 1);
+            }
+        }
+        //check for boolean
+        if (line.equals("true")) {
+            return new Bool("temp", true);
+        }
+        if (line.equals("false")) {
+            return new Bool("temp", false);
+        }
+        brackets = 0; //track depth
+        int type = -1; //expression type
+        ArrayList<Integer> splitPoints = new ArrayList<>();
+        splitPoints.add(0);
+        for (int i = line.length() - 1; i >= 0 && splitPoints.size() < 2; i--) {
+            if (line.charAt(i) == '(') {
+                brackets++;
+            } else if (line.charAt(i) == ')') {
+                brackets--;
+            } else if (brackets == 0 && (line.charAt(i) == '+' || line.charAt(i) == '-' || line.charAt(i) == '*' || line.charAt(i) == '/')) {
+                splitPoints.add(i);
+                switch (line.charAt(i)) {
+                    case '+':
+                        type = 0;
+                        break;
+                    case '-':
+                        type = 1;
+                        break;
+                    case '*':
+                        type = 2;
+                        break;
+                    case '/':
+                        type = 3;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+        if (type > -1) { //is an expression
+            splitPoints.add(line.length());
+            Variable[] solvedSections = new Variable[2];
+            //solves each parts
+            solvedSections[0] = expressionSolver(line.substring(splitPoints.get(0), splitPoints.get(1) - 1));
+            solvedSections[1] = expressionSolver(line.substring(splitPoints.get(1) + 1, splitPoints.get(2)));
+            switch (type) { //solves
+                case 0:
+                    return new Number("temp", solvedSections[0].getIntegerValue() + solvedSections[1].getIntegerValue());
+                case 1:
+                    return new Number("temp", solvedSections[0].getIntegerValue() - solvedSections[1].getIntegerValue());
+                case 2:
+                    return new Number("temp", solvedSections[0].getIntegerValue() * solvedSections[1].getIntegerValue());
+                case 3:
+                    return new Number("temp", solvedSections[0].getIntegerValue() / solvedSections[1].getIntegerValue());
+                default:
+                    break;
+            }
+        } else {//is a variable
+            try {
+                return new Number("temp", Integer.parseInt(line));
+            } catch (Exception e) {
+
+            }
+            return getVariable(line);
+        }
+        return new Number("temp", Integer.parseInt(line));
+    }
+
+    public void createVariable(String name, boolean value) {
+        variables.add(new Bool(name, value));
+        output.add(name + ": " + variables.get(variables.size() - 1).text() + " boolean");
+    }
+
+    public void createVariable(String name, int value) {
+        variables.add(new Number(name, value));
+        output.add(name + ": " + variables.get(variables.size() - 1).text() + " int");
+    }
+
+    public void createVariable(String name) {
+        variables.add(new Variable(name));
+        output.add(name + ": " + variables.get(variables.size() - 1).text() + " null");
+    }
+
+    public Variable getVariable(String name) {
+        for (Variable variable : variables) {
+            if (variable.name.equals(name)) {
+                return variable;
+            }
+        }
+        error = true;
+        output.add("Variable \"" + name + "\" does not exist");
+        return null;
+    }
+
+    public boolean condition(String condition) {
+
+        return false;
+    }
+
+    public class Variable {
+
+        public String name;
+        public Object value = null;
+
+        public Variable(String name) {
+            this.name = name;
+        }
+
+        public Variable(String name, Object value) {
+            this.name = name;
+            this.value = value;
+        }
+
+        public String text() {
+            return "null";
+        }
+
+        public boolean getBooleanValue() {
+            return false;
+        }
+
+        public int getIntegerValue() {
+            return 0;
+        }
+
+    }
+
+    public class Number extends Variable {
+
+        public Number(String name, int value) {
+            super(name, value);
+        }
+
+        @Override
+        public String text() {
+            return value + "";
+        }
+
+        @Override
+        public boolean getBooleanValue() {
+            return (int) value > 0;
+        }
+
+        @Override
+        public int getIntegerValue() {
+            return (int) value;
+        }
+
+    }
+
+    public class Bool extends Variable {
+
+        public Bool(String name, boolean value) {
+            super(name, value);
+        }
+
+        @Override
+        public String text() {
+            return value + "";
+        }
+
+        @Override
+        public boolean getBooleanValue() {
+            return (boolean) value;
+        }
+
+        @Override
+        public int getIntegerValue() {
+            if ((boolean) value) {
+                return 1;
+            }
+            return 0;
+        }
+
+    }
+
+    public class Conditional {
+
+        protected String condition;
+        public boolean running = false;
+
+        public Conditional(String condition) {
+            this.condition = condition;
+            running = conditionSolver(condition).getBooleanValue();
+        }
+
+        private boolean evaluate() {
+            return running;
+        }
+
+    }
+
+    public class Loop extends Conditional {
+
+        public int lineNo;
+
+        public Loop(String condition, int lineNo) {
+            super(condition);
+            this.lineNo = lineNo;
+        }
+
+        private boolean evaluate() {
+            return conditionSolver(condition).getBooleanValue();
+        }
+
+    }
+
+    public ArrayList<Variable> getVariables() {
+        return variables;
+    }
+
+}
