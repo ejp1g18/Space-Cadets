@@ -1,5 +1,3 @@
-import chatroom.client.Client;
-import chatroom.host.Server;
 import java.util.Scanner;
 
 public class ChatRoom {
