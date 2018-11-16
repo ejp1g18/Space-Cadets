@@ -137,12 +137,11 @@ public class Image {
                         }
                     }
                     //average value
-                    int ix = (int)(Math.floor(x)), iy = (int)(Math.floor(y));
-                    values[ix][iy][r - MIN_R] = total / count / 255.0 / 4.0;
-                    if (values[ix][iy][r - MIN_R] > 0.7 && finalCValues[ix][iy] == 0 && finalCValues[ix + 1][iy] != r && finalCValues[ix + 1][iy + 1] != r && finalCValues[ix][iy + 1] != r) {
+                    values[x][y][r - MIN_R] = total / count / 255.0 / 4.0;
+                    if (values[x][y][r - MIN_R] > 0.7 && finalCValues[x][y] == 0 && finalCValues[x + 1][y] != r && finalCValues[x + 1][y + 1] != r && finalCValues[x][y + 1] != r) {
                         //circle
-                        pixel[ix][iy] = 1f;
-                        finalCValues[ix][iy] = r;
+                        pixel[x][y] = 1f;
+                        finalCValues[x][y] = r;
                     }
                 }
             }
